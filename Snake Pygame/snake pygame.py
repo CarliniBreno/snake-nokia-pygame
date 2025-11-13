@@ -7,7 +7,6 @@ import time
 import sys
 import os
 
-# Optional: pyserial
 try:
     import serial
     SERIAL_AVAILABLE = True
@@ -15,61 +14,47 @@ except Exception:
     serial = None
     SERIAL_AVAILABLE = False
 
-# ---------------- CONFIG ----------------
+# --- CONFIG 
 UDP_LISTEN_HOST = '0.0.0.0'
 UDP_LISTEN_PORT = 5005
 SERIAL_ENABLED = True
 SERIAL_PORT = 'COM5'
 SERIAL_BAUD = 115200
-
-# --- ALTERADO: Novo tamanho da grade jogável (menor) ---
 GRID_W = 56 # Era 64, agora 30
 GRID_H = 24 # Era 32, agora 20
 TILE = 16
 
-HUD_TILES = 3 # 3 tiles para o HUD (48 pixels de altura)
+HUD_TILES = 3
 
-# --- ALTERADO: Tamanho da tela mantido maior para bordas laterais ---
-# A largura da tela agora é maior que a largura da grade jogável,
-# para permitir um "preenchimento" nas laterais como na imagem Nokia.
-# A altura da tela também será maior para ter um preenchimento na parte inferior.
-SCREEN_W = 64 * TILE # Mantém a largura original de 64 * 16 pixels
-SCREEN_H = HUD_TILES * TILE + 32 * TILE # Mantém a altura original de 32 * 16 pixels + HUD
-
-# velocidade inicial e limites
+SCREEN_W = 64 * TILE
+SCREEN_H = HUD_TILES * TILE + 32 * TILE
 SPEED = 8.0
 MIN_SPEED = 4.0
 MAX_SPEED = 25.0
 
 DISPLAY_GREEN = (110, 236, 0)
 BLACK = (0, 0, 0)
-WHITE = (255, 255, 255) # Adicionado para preenchimento de borda, se necessário
+WHITE = (255, 255, 255)
 
-# cores -> cada cor corresponde a um tipo/efeito
 FOOD_COLORS = {
-    'red': (200, 20, 20),   # vermelha: cresce +2
-    'blue':   (20, 60, 200),   # azul: speed -0.5 (min min)
-    'purple': (150, 40, 180),  # roxa: speed +0.5
-    'orange': (230, 120, 20)   # laranja: shrink -1 (ajustado)
+    'red': (200, 20, 20),   # vermelha
+    'blue':   (20, 60, 200),   # azul
+    'purple': (150, 40, 180),  # roxa
+    'orange': (230, 120, 20)   # laranja
 }
 FOOD_TYPES = list(FOOD_COLORS.keys())
 
-HUNGER_LIMIT = 20.0  # segundos sem comer -> gameover
+HUNGER_LIMIT = 20.0
 
 BEST_SCORE_FILE = 'best_score.txt'
-PIXEL_FONT_FILENAME = 'Iceberg-Regular.ttf'  # coloque o ttf com esse nome na mesma pasta
+PIXEL_FONT_FILENAME = 'Iceberg-Regular.ttf'
 
-# mínimo de segmentos permitido
 MIN_SEGMENTS = 3
 
-# quantas comidas precisam ser comidas antes de pedras aparecerem
 OBSTACLES_AFTER_EATEN = 10
 
-# a partir de qual wave_Number a comida laranja é permitida
-# (inicialmente wave_number = 1; após primeiro reset -> 2; após segundo reset -> 3)
 ORANGE_ALLOWED_WAVE = 3
 
-# ---------------- input remoto ----------------
 input_queue = queue.Queue()
 
 def udp_listener(stop_event, q, host=UDP_LISTEN_HOST, port=UDP_LISTEN_PORT):
@@ -107,7 +92,7 @@ def serial_listener(stop_event, q, port=SERIAL_PORT, baud=SERIAL_BAUD):
             continue
     ser.close()
 
-# ---------------- utilities ----------------
+# --- utilities
 def load_best_score():
     try:
         if os.path.exists(BEST_SCORE_FILE):
@@ -124,7 +109,7 @@ def save_best_score(val):
     except Exception:
         pass
 
-# ---------------- game ----------------
+# --- o jogo
 class SnakeGame:
     def __init__(self):
         pygame.init()
@@ -133,10 +118,8 @@ class SnakeGame:
         self.screen = pygame.display.set_mode((SCREEN_W, SCREEN_H))
         pygame.display.set_caption('Snake - Waves & Obstacles (Nokia Inspired)')
         self.clock = pygame.time.Clock()
-
-        # fontes aumentadas (para ficar visível)
-        small_size = max(14, int(TILE * 2.0))
-        big_size   = max(36, int(TILE * 4.0))
+        small_size = max(16, int(TILE * 2.0))
+        big_size   = max(24, int(TILE * 4.0))
 
         if os.path.exists(PIXEL_FONT_FILENAME):
             try:
@@ -152,13 +135,9 @@ class SnakeGame:
         self.font = self.pixel_font
         self.large_font = self.pixel_font_big
 
-        # high score
         self.best_score = load_best_score()
-
-        # inicia variáveis do jogo
         self.start_new_game(initial_menu=True)
 
-    # ---------- wave & obstacle helpers ----------
     def spawn_wave(self, n_foods):
         """
         Cria uma nova leva:
@@ -169,11 +148,8 @@ class SnakeGame:
         quanto após cada reset — quando for um reset incrementamos wave_number antes de chamar.
         """
         n_foods = max(1, min(3, int(n_foods)))
-        # clear current foods and obstacles
         self.foods = []
         self.obstacles = []
-
-        # spawn foods first
         added = 0
         tries = 0
         while added < n_foods and tries < 1000:
@@ -183,7 +159,6 @@ class SnakeGame:
                 self.foods.append(f)
                 added += 1
 
-        # spawn obstacles only after enough foods have been eaten (threshold)
         if getattr(self, 'eaten_count', 0) >= OBSTACLES_AFTER_EATEN:
             n_obst = random.randint(1, 2)
             added_o = 0
@@ -195,7 +170,6 @@ class SnakeGame:
                     self.obstacles.append(obs)
                     added_o += 1
 
-        # fallback: ensure at least one food exists
         if len(self.foods) == 0:
             f = self._create_food_candidate(force=True)
             if f:
@@ -218,10 +192,9 @@ class SnakeGame:
             if any(f['pos'] == pos for f in getattr(self, 'foods', [])):
                 continue
 
-            # decide tipos permitidos nesta wave (remove 'orange' se ainda não permitido)
             allowed_types = FOOD_TYPES.copy()
             if getattr(self, 'wave_number', 1) < ORANGE_ALLOWED_WAVE:
-                # remove orange to prevent it from appearing too early
+
                 if 'orange' in allowed_types:
                     allowed_types.remove('orange')
             if not allowed_types:
@@ -229,13 +202,12 @@ class SnakeGame:
 
             ftype = random.choice(allowed_types)
             return {'pos': pos, 'type': ftype}
-        # if force True, pick any non-snake tile even if overlaps obstacles/foods
+
         if force:
             for x in range(GRID_W):
                 for y in range(GRID_H):
                     pos = (x,y)
                     if pos not in self.snake:
-                        # still respect orange rule if possible
                         allowed_types = FOOD_TYPES.copy()
                         if getattr(self, 'wave_number', 1) < ORANGE_ALLOWED_WAVE and 'orange' in allowed_types:
                             allowed_types.remove('orange')
@@ -255,13 +227,13 @@ class SnakeGame:
             y = random.randint(0, max(0, GRID_H - 2))
             tiles = {(x+1, y), (x, y+1), (x+1, y+1), (x+2, y+1)}
 
-            # don't overlap snake
+
             if any(t in self.snake for t in tiles):
                 continue
-            # don't overlap foods
+
             if any(any(f['pos'] == t for f in self.foods) for t in tiles):
                 continue
-            # don't overlap existing obstacles
+
             overlap = False
             for other in getattr(self, 'obstacles', []):
                 for t in tiles:
@@ -275,87 +247,67 @@ class SnakeGame:
             return tiles
         return None
 
-    # ---------- basic game lifecycle ----------
+    # --- ciclo de vida basico do jogo
     def start_new_game(self, initial_menu=False):
         cx, cy = GRID_W//2, GRID_H//2
         self.snake = [(cx, cy), (cx-1, cy), (cx-2, cy)]
         self.direction = (1, 0)
         self.next_direction = self.direction
 
-        # foods and obstacles created as a wave
         self.foods = []
         self.obstacles = []
-        # eaten_count é quantas comidas foram comidas (para ativar pedras)
         self.eaten_count = 0
 
-        # wave counter: 1 = initial wave; increment antes de cada spawn de nova wave (reset)
         self.wave_number = 1
 
-        # spawn initial wave (sem pedras até eaten_count >= threshold)
+
         self.spawn_wave(random.randint(1, 3))
 
         self.score = 0
         self.speed = float(SPEED)
         self.move_timer = 0.0
         self.move_delay = 1.0 / self.speed
-
-        # crescimento pendente (cada unidade = 1 extra segment)
         self.pending_grow = 0
-
-        # hunger timer
         self.hunger_timer = 0.0
         self.hunger_limit = HUNGER_LIMIT
-
-        # gameover selection
         self.gameover_selection = 0
 
         self.state = 'menu' if initial_menu else 'playing'
     
 
     def get_game_area_offset(self):
-        # 1. Centralização Horizontal (como antes)
+
         game_area_total_width = GRID_W * TILE
         offset_x = (SCREEN_W - game_area_total_width) // 2
 
-        # 2. Centralização Vertical (Nova lógica)
-        
-        # Espaço total disponível ABAIXO da linha do HUD
         total_space_below_hud = SCREEN_H - (HUD_TILES * TILE)
         
-        # Altura da grade do jogo em si
         game_area_total_height = GRID_H * TILE
-        
-        # O espaço vazio é o espaço total menos a grade.
-        # Dividimos por 2 para ter a margem (padding) superior e inferior.
+
         top_padding = (total_space_below_hud - game_area_total_height) // 2
         
-        # O novo Y começa abaixo do HUD + a margem
+
         offset_y = (HUD_TILES * TILE) + top_padding
         
         return offset_x, offset_y
 
     def grid_to_pixel(self, gx, gy):
-        # --- ALTERADO: Agora usa o offset para centralizar a grade ---
         offset_x, offset_y = self.get_game_area_offset()
         px = offset_x + gx * TILE
         py = offset_y + gy * TILE
         return px, py
 
-    # ---------- drawing ----------
+    # --- drawing
     def draw(self):
         # fundo verde
         self.screen.fill(DISPLAY_GREEN)
-
-        # --- HUD AJUSTADO (Score, Best, Timer) ---
-        # Obter a altura da fonte para centralizar verticalmente no HUD
         score_text = f'{self.score:04d}'
         score_surf = self.font.render(score_text, False, BLACK)
         
-        # Calcula o Y centralizado dentro do espaço do HUD
         pos_y = (HUD_TILES * TILE - score_surf.get_height()) // 2
         
         # score (esquerda)
-        self.screen.blit(score_surf, (10, pos_y)) # 10 pixels da esquerda
+        self.screen.blit(score_surf, (10, pos_y))
 
         # best (centro)
         best_text = f'BEST {self.best_score:04d}'
@@ -370,33 +322,30 @@ class SnakeGame:
         timer_x = SCREEN_W - timer_surf.get_width() - 10 # 10 pixels da direita
         self.screen.blit(timer_surf, (timer_x, pos_y))
         
-        # --- DEMARCAÇÃO DO HUD ---
+        # --- DEMARCACAO DO HUD ---
         pygame.draw.line(self.screen, BLACK, (0, HUD_TILES*TILE - 1), (SCREEN_W, HUD_TILES*TILE - 1), 2)
         
-        # --- NOVO: Desenha a Borda da Área Jogável ---
-        # Obtem os offsets para saber onde a área jogável começa
         offset_x, offset_y = self.get_game_area_offset()
         
-        # Coordenadas da área jogável na tela de pixels
+        # Area jogável
         game_area_px_x = offset_x
         game_area_px_y = offset_y
         game_area_px_w = GRID_W * TILE
         game_area_px_h = GRID_H * TILE
 
-        # Desenha o fundo da área jogável para garantir que não tenha artefatos
         game_rect_bg = pygame.Rect(game_area_px_x, game_area_px_y, game_area_px_w, game_area_px_h)
         pygame.draw.rect(self.screen, DISPLAY_GREEN, game_rect_bg)
         
-        # Desenha a borda pontilhada
-        dot_size = max(1, TILE // 8) # Tamanho de cada "ponto"
-        dot_step = max(1, TILE // 4) # Espaçamento entre os pontos
+        # Borda
+        dot_size = max(1, TILE // 8) 
+        dot_step = max(1, TILE // 4) 
         
-        # Borda Superior e Inferior da área jogável
+
         for x in range(0, game_area_px_w, dot_step):
             pygame.draw.rect(self.screen, BLACK, (game_area_px_x + x, game_area_px_y, dot_size, dot_size)) # Top
             pygame.draw.rect(self.screen, BLACK, (game_area_px_x + x, game_area_px_y + game_area_px_h - dot_size, dot_size, dot_size)) # Bottom
         
-        # Borda Esquerda e Direita da área jogável
+
         for y in range(0, game_area_px_h, dot_step):
             pygame.draw.rect(self.screen, BLACK, (game_area_px_x, game_area_px_y + y, dot_size, dot_size)) # Left
             pygame.draw.rect(self.screen, BLACK, (game_area_px_x + game_area_px_w - dot_size, game_area_px_y + y, dot_size, dot_size)) # Right
@@ -404,7 +353,7 @@ class SnakeGame:
         # --- FIM DO HUD e BORDAS ---
 
 
-        # draw foods (colored squares)
+        # comidas
         food_size = int(TILE * 0.6)
         for f in self.foods:
             fx, fy = f['pos']
@@ -413,14 +362,14 @@ class SnakeGame:
             color = FOOD_COLORS.get(f['type'], (200,20,20))
             pygame.draw.rect(self.screen, color, frect, border_radius=2)
 
-        # draw obstacles (stones) as black tiles in triangular shape
+        # obstaculos
         for obs in self.obstacles:
             for (ox, oy) in obs:
                 opx, opy = self.grid_to_pixel(ox, oy)
                 rect = pygame.Rect(opx + (TILE//8), opy + (TILE//8), TILE - TILE//4, TILE - TILE//4)
                 pygame.draw.rect(self.screen, BLACK, rect, border_radius=max(1, TILE//6))
 
-        # draw snake (preta, fina)
+        # cobra
         seg_w = int(TILE * 0.7)
         seg_h = int(TILE * 0.7)
         for i, (sx, sy) in enumerate(self.snake):
@@ -450,7 +399,6 @@ class SnakeGame:
             self._draw_center_text('GAME OVER', self.large_font, (SCREEN_W//2, SCREEN_H//2 - 90))
             self._draw_center_text(f'Score final: {self.score}', self.font, (SCREEN_W//2, SCREEN_H//2 - 40))
 
-            # opções (icones maiores)
             opts_center_x = SCREEN_W//2
             base_y = SCREEN_H//2 + 10
             spacing = int(TILE * 4)
@@ -485,7 +433,7 @@ class SnakeGame:
         try:
             pygame.draw.arc(surf, color, rect, 3.0, 5.5, width)
         except Exception:
-            pygame.draw.arc(surf, color, rect, 3.0, 5.5) # fallback p/ pygame antigo
+            pygame.draw.arc(surf, color, rect, 3.0, 5.5)
         tri = [(cx + r - 1, cy - 1), (cx + r + max(6, size//4), cy - max(3, size//6)), (cx + r + max(4, size//6), cy + max(4, size//6))]
         pygame.draw.polygon(surf, color, tri)
 
@@ -496,18 +444,13 @@ class SnakeGame:
         pygame.draw.line(surf, color, (cx-off, cy-off), (cx+off, cy+off), thick)
         pygame.draw.line(surf, color, (cx-off, cy+off), (cx+off, cy-off), thick)
 
-    # ---------- game step ----------
+    # --- game step
     def step(self):
         head = self.snake[0]
         dx, dy = self.direction
         new_head = (head[0] + dx, head[1] + dy)
-        
-        # --- ALTERADO: Colisão com as bordas da nova grade jogável ---
-        # A cobrinha bate na parede e reaparece do outro lado,
-        # MAS apenas DENTRO dos limites da GRID_W e GRID_H
         new_head = (new_head[0] % GRID_W, new_head[1] % GRID_H)
 
-        # collision with obstacles?
         if any(new_head in obs for obs in self.obstacles):
             self.state = 'gameover'
             self.gameover_selection = 0
@@ -516,7 +459,7 @@ class SnakeGame:
                 save_best_score(self.best_score)
             return
 
-        # self collision
+        # colisao no corpo
         if new_head in self.snake:
             self.state = 'gameover'
             self.gameover_selection = 0
@@ -525,10 +468,9 @@ class SnakeGame:
                 save_best_score(self.best_score)
             return
 
-        # insert head
+
         self.snake.insert(0, new_head)
 
-        # check if any food eaten at new_head
         eaten_idx = None
         eaten_food = None
         for i, f in enumerate(self.foods):
@@ -539,64 +481,49 @@ class SnakeGame:
 
         if eaten_food:
             ftype = eaten_food['type']
-            # score sempre incrementa 1 por comida
             self.score += 1
-            # conta comida comida para ativar pedras depois de X comidas
             self.eaten_count = getattr(self, 'eaten_count', 0) + 1
 
-            # aplicar efeito pelo tipo
             if ftype == 'purple':
-                # speed +0.5, growth normal +1
                 self.speed = min(MAX_SPEED, self.speed + 0.5)
                 self.pending_grow += 1
             elif ftype == 'red':
-                # growth +2
                 self.pending_grow += 2
             elif ftype == 'blue':
-                # speed -0.5 com limite min
                 self.speed = max(MIN_SPEED, self.speed - 0.5)
                 self.pending_grow += 1
             elif ftype == 'orange':
-                # **ajuste**: shrink 1 imediatamente (remover 1 segmento) em vez de 2
                 if len(self.snake) > 0:
                     self.snake.pop()
-                # check length with MIN_SEGMENTS
                 if len(self.snake) < MIN_SEGMENTS:
                     self.state = 'gameover'
                     if self.score > self.best_score:
                         self.best_score = self.score
                         save_best_score(self.best_score)
-                    # remove the eaten food from list
                     if eaten_idx is not None:
                         self.foods.pop(eaten_idx)
                     return
 
-            # reset hunger timer ao comer qualquer comida
             self.hunger_timer = 0.0
 
-            # remove eaten food from current wave
             if eaten_idx is not None:
                 self.foods.pop(eaten_idx)
 
-            # IMPORTANT: only when the wave is fully eaten, spawn a NEW wave + NEW obstacles
+
             if len(self.foods) == 0:
-                # increment wave counter (we finished a wave -> this is a reset)
                 self.wave_number = getattr(self, 'wave_number', 1) + 1
                 n_new = random.randint(1, 3)
-                # spawn new wave (this will clear obstacles and create new ones if eaten_count threshold met)
                 self.spawn_wave(n_new)
 
-            # update move_delay based on new speed
+
             self.move_delay = 1.0 / self.speed
 
-        # popping logic: se pending_grow > 0 então consumimos uma unidade e não removemos rabo
+
         if self.pending_grow > 0:
             self.pending_grow -= 1
         else:
-            # se não crescemos, removemos rabo normal
             self.snake.pop()
 
-        # After normal step/pop, check minimum length again to be safe
         if len(self.snake) < MIN_SEGMENTS:
             self.state = 'gameover'
             if self.score > self.best_score:
@@ -630,7 +557,7 @@ class SnakeGame:
                 self.start_new_game(initial_menu=True)
             return
 
-        # normal controls
+        # controles
         if cmd in ('UP','W','ARROWUP'):
             self.try_set_direction((0,-1))
         elif cmd in ('DOWN','S','ARROWDOWN'):
@@ -697,7 +624,7 @@ class SnakeGame:
                     elif key == pygame.K_r:
                         input_queue.put(('local','RESET'))
 
-            # process queue
+
             try:
                 while True:
                     source, cmd = input_queue.get_nowait()
@@ -705,9 +632,9 @@ class SnakeGame:
             except queue.Empty:
                 pass
 
-            # only update timers & movement when playing
+
             if self.state == 'playing':
-                # hunger timer
+                # relogio de fome
                 self.hunger_timer += dt
                 if self.hunger_timer >= self.hunger_limit:
                     self.state = 'gameover'
@@ -716,17 +643,15 @@ class SnakeGame:
                         self.best_score = self.score
                         save_best_score(self.best_score)
 
-                # movement
+                # movimentacao
                 self.move_timer += dt
                 if self.move_timer >= self.move_delay:
-                    # commit next_direction and step
                     self.direction = self.next_direction
                     self.step()
-                    # ensure move_delay synced with speed
                     self.move_delay = 1.0 / self.speed
                     self.move_timer = 0.0
 
-            # draw & cap
+
             self.draw()
             self.clock.tick(60)
 
