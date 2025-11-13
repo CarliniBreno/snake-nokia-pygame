@@ -379,8 +379,8 @@ class SnakeGame:
 
         # overlays: menu / pause / gameover
         if self.state == 'menu':
-            self._draw_center_text('SNAKE - Pressione ENTER para jogar', self.large_font, (SCREEN_W//2, SCREEN_H//2 - 30))
-            self._draw_center_text('WASD ou setas para mover. ESP32 via UDP porta %d' % UDP_LISTEN_PORT, self.font, (SCREEN_W//2, SCREEN_H//2 + 20))
+            self._draw_center_text('SNAKE - Pressione ENTER para jogar', self.font, (SCREEN_W//2, SCREEN_H//2 - 30))
+            self._draw_center_text('WASD ou setas para mover. ESP32 via porta COM5 %d' % UDP_LISTEN_PORT, self.font, (SCREEN_W//2, SCREEN_H//2 + 20))
         elif self.state == 'paused':
             overlay = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
             overlay.fill((0,0,0,160))
